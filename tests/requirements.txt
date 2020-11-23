@@ -10,6 +10,7 @@ wget
 requests
 odc-aws
 odc-aio
+odc-azure
 odc-thredds
 odc-apps-cloud
 odc-index

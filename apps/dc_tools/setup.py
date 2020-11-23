@@ -26,7 +26,8 @@ setup(
         'odc_index',
         'odc_io',
         'odc_aws',
-        'odc_aio'
+        'odc_aio',
+        'odc_azure'
     ],
 
     extras_require={
@@ -40,7 +41,8 @@ setup(
             's3-to-dc = odc.apps.dc_tools.s3_to_dc:cli',
             'thredds-to-dc = odc.apps.dc_tools.thredds_to_dc:cli',
             'sqs-to-dc = odc.apps.dc_tools.sqs_to_dc:cli',
-            'stac-to-dc = odc.apps.dc_tools.stac_api_to_dc:cli'
+            'stac-to-dc = odc.apps.dc_tools.stac_api_to_dc:cli',
+            'azure-to-dc = odc.apps.dc_tools.azure_to_dc:cli'
         ]
     },
 

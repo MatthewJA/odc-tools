@@ -26,6 +26,7 @@ RUN /env/bin/pip install --extra-index-url https://packages.dea.ga.gov.au/ \
     --editable libs/algo \
     --editable libs/aio \
     --editable libs/aws \
+    --editable libs/azure \
     --editable libs/dscache \
     --editable libs/geom \
     --editable libs/index \
