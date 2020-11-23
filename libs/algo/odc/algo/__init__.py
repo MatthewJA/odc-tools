@@ -32,6 +32,12 @@ from ._dask import (
     randomize,
 )
 
+from ._memsink import (
+    DataSink,
+    store_to_mem,
+    yxbt_sink,
+)
+
 from ._rgba import (
     is_rgb,
     to_rgba,
@@ -64,6 +70,9 @@ __all__ = (
     "chunked_persist_da",
     "chunked_persist_ds",
     "randomize",
+    "store_to_mem",
+    "yxbt_sink",
+    "DataSink",
     "is_rgb",
     "to_rgba",
     "to_rgba_np",

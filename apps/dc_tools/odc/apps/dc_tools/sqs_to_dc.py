@@ -27,15 +27,17 @@ class SQStoDCException(Exception):
     """
     Exception to raise for error during SQS to DC indexing/archiving
     """
+
     pass
+
 
 def extract_metadata_from_message(message):
     try:
         body = json.loads(message.body)
         metadata = json.loads(body["Message"])
-    except KeyError as ke:
+    except (KeyError, json.JSONDecodeError) as e:
         raise SQStoDCException(
-            f"Failed to load metadata from the SQS message due to Key Error - {ke}"
+            f"Failed to load metadata from the SQS message due to error: {e}"
         )
 
     if metadata:
@@ -115,20 +117,13 @@ def get_metadata_from_s3_record(message: dict, record_path: tuple) -> Tuple[dict
                             ResponseCacheControl="no-cache"
                         )
                         data = load(obj["Body"].read())
-                        uri = get_s3_url(bucket_name, key)
+                        uri = f"s3://{bucket_name}/{key}"
                     except Exception as e:
                         raise SQStoDCException(
                             f"Exception thrown when trying to load s3 object: '{e}'\n"
                         )
 
     return data, uri
-
-
-def get_s3_url(bucket_name, obj_key):
-    return "http://{bucket_name}.s3.amazonaws.com/{obj_key}".format(
-        bucket_name=bucket_name, obj_key=obj_key
-    )
-
 
 def get_uri(metadata, rel_value):
     uri = None
@@ -169,8 +164,9 @@ def do_indexing(
                     updates = {tuple(): changes.allow_any}
                 dc.index.datasets.update(ds, updates_allowed=updates)
             else:
-                if dc.index.datasets.get(metadata.get("id")):
-                    raise SQStoDCException("Dataset already exists, not indexing")
+                if dc.index.datasets.has(metadata.get("id")):
+                    logging.warning("Dataset already exists, not indexing")
+                    return
                 dc.index.datasets.add(ds)
         else:
             raise SQStoDCException(

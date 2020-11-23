@@ -2,7 +2,7 @@
 Generic dask helpers
 """
 
-from typing import Tuple, Union, cast
+from typing import Tuple, Union, cast, Iterator, List, Any, Dict, Hashable
 from random import randint
 from bisect import bisect_right, bisect_left
 import numpy as np
@@ -10,6 +10,8 @@ import xarray as xr
 from dask.distributed import wait as dask_wait
 import dask.array as da
 from dask.highlevelgraph import HighLevelGraph
+import functools
+import toolz
 from toolz import partition_all
 from ._tools import ROI, roi_shape, slice_in_out
 
@@ -92,12 +94,21 @@ def randomize(prefix: str) -> str:
     return '{}-{:08x}'.format(prefix, randint(0, 0xFFFFFFFF))
 
 
+def list_reshape(x: List[Any], shape: Tuple[int, ...]) -> List[Any]:
+    """
+    similar to numpy version of x.reshape(shape), but only works on flat list on input.
+    """
+    for n in shape[1:][::-1]:
+        x = list(map(list, toolz.partition(n, x)))
+    return x
+
+
 def unpack_chunksize(chunk: int, N: int) -> Tuple[int, ...]:
     """
     Compute chunk sizes
     Example: 4, 11 -> (4, 4, 3)
     """
-    if chunk >= N:
+    if chunk >= N or chunk < 0:
         return (N,)
 
     nb = N//chunk
@@ -106,6 +117,81 @@ def unpack_chunksize(chunk: int, N: int) -> Tuple[int, ...]:
         return tuple(chunk for _ in range(nb))
 
     return tuple(chunk for _ in range(nb)) + (last_chunk,)
+
+
+def _roi_from_chunks(chunks: Tuple[int, ...]) -> Iterator[slice]:
+    off = 0
+    for v in chunks:
+        off_next = off + v
+        yield slice(off, off_next)
+        off = off_next
+
+
+def _split_chunks(chunks: Tuple[int, ...], max_chunk: int) -> Iterator[Tuple[int, int, slice]]:
+    """
+    For every input chunk split it into smaller chunks.
+    Return a list of tuples describing output chunks and their relation to input chunks.
+
+    Output: [(dst_idx: int, src_idx: int, src_roi: slice]
+
+    Note that every output chunk has only one chunk on input,
+    so chunking might be irregular on output. This is by design, to avoid
+    creating cross chunk dependencies.
+    """
+    dst_idx = 0
+    for src_idx, src_sz in enumerate(chunks):
+        off = 0
+        while off < src_sz:
+            sz = src_sz - off
+            if max_chunk > 0:
+                sz = min(sz, max_chunk)
+            yield (dst_idx, src_idx, slice(off, off+sz))
+            dst_idx += 1
+            off += sz
+
+
+def _get_chunks_asarray(xx: da.Array) -> np.ndarray:
+    """
+    Returns 2 ndarrays of equivalent shapes
+
+    - First one contains dask tasks: (name: str, idx0:int, idx1:int)
+    - Second one contains sizes of blocks (Tuple[int,...])
+    """
+    shape_in_chunks = xx.numblocks
+    name = xx.name
+
+    chunks = np.ndarray(shape_in_chunks, dtype='object')
+    shapes = np.ndarray(shape_in_chunks, dtype='object')
+    for idx in np.ndindex(shape_in_chunks):
+        chunks[idx] = (name, *idx)
+        shapes[idx] = tuple(xx.chunks[k][i] for k, i in enumerate(idx))
+    return chunks, shapes
+
+
+def _get_chunks_for_all_bands(xx: xr.Dataset):
+    """
+    Equivalent to _get_chunks_asarray(xx.to_array('band').data)
+    """
+    blocks = []
+    shapes = []
+
+    for dv in xx.data_vars.values():
+        b, s = _get_chunks_asarray(dv.data)
+        blocks.append(b)
+        shapes.append(s)
+
+    blocks = np.stack(blocks)
+    shapes = np.stack(shapes)
+    return blocks, shapes
+
+
+def _get_all_chunks(xx: da.Array, flat: bool = True) -> List[Any]:
+    shape_in_chunks = xx.numblocks
+    name = xx.name
+    chunks = [(name, *idx) for idx in np.ndindex(shape_in_chunks)]
+    if flat:
+        return chunks
+    return list_reshape(chunks, shape_in_chunks)
 
 
 def empty_maker(fill_value, dtype, dsk, name='empty'):
@@ -190,7 +276,7 @@ def _extract_as_one_block(axis, crop, shape_in_blocks, *blocks):
     return out[crop]
 
 
-def _chunk_getter(xx):
+def _chunk_getter(xx: da.Array):
     """
     _chunk_getter(xx)(np.s_[:3, 2:4]) -> (
     (xx.name, 0, 2),
@@ -198,7 +284,7 @@ def _chunk_getter(xx):
     (xx.name, 1, 2),
     ...)
     """
-    shape_in_chunks = tuple(map(len, xx.chunks))
+    shape_in_chunks = xx.numblocks
     name = xx.name
     xx = np.asarray([{'v': tuple(idx)} for idx in np.ndindex(shape_in_chunks)]).reshape(shape_in_chunks)
 
@@ -329,3 +415,96 @@ def crop_2d_dense(xx: da.Array, yx_roi: Tuple[slice, slice], name: str = 'crop_2
                     chunks=chunks,
                     dtype=xx.dtype,
                     shape=shape)
+
+
+def _reshape_yxbt_impl(blocks, crop_yx=None, dtype=None):
+    """
+    input axis order : (band, time,) (blocks: y, x)
+    output axis order: y, x, band, time
+    """
+    def squeeze_to_yx(x):
+        idx = tuple(0 for _ in x.shape[:-2])
+        return x[idx]
+
+    assert len(blocks) > 0
+    nb = len(blocks)
+    nt = len(blocks[0])
+    b = squeeze_to_yx(blocks[0][0])
+
+    if dtype is None:
+        dtype = b.dtype
+
+    if crop_yx:
+        b = b[crop_yx]
+    ny, nx = b.shape
+
+    dst = np.empty((ny, nx, nb, nt), dtype=dtype)
+    for (it, ib) in np.ndindex((nt, nb)):
+        b = squeeze_to_yx(blocks[ib][it])
+        if crop_yx is not None:
+            b = b[crop_yx]
+
+        assert b.shape == (ny, nx)
+        dst[:, :, ib, it] = b
+
+    return dst
+
+
+def reshape_yxbt(xx: xr.Dataset,
+                 name: str = 'reshape_yxbt',
+                 yx_chunks: Union[int, Tuple[int, int]] = -1) -> xr.DataArray:
+    """
+    xx: (time, y, x) across several bands
+
+    Expect chunks to be
+      - 1 element sized for 1st dimension
+    """
+    if isinstance(yx_chunks, int):
+        yx_chunks = (yx_chunks, yx_chunks)
+
+    name0 = name
+    name = randomize(name)
+
+    blocks, _ = _get_chunks_for_all_bands(xx)
+    b0, *_ = xx.data_vars.values()
+
+    nb = len(xx.data_vars.values())
+    nt, ny, nx = b0.shape
+
+    deps = [dv.data for dv in xx.data_vars.values()]
+    shape = (ny, nx, nb, nt)
+    dtype = b0.dtype
+    dims = b0.dims[1:] + ('band', b0.dims[0])
+
+    maxy, maxx = yx_chunks
+    ychunks, xchunks = b0.data.chunks[1:3]
+    _yy = list(_split_chunks(ychunks, maxy))
+    _xx = list(_split_chunks(xchunks, maxx))
+    ychunks = tuple(roi.stop - roi.start for _, _, roi in _yy)
+    xchunks = tuple(roi.stop - roi.start for _, _, roi in _xx)
+
+    chunks = [ychunks, xchunks, (nb,), (nt,)]
+
+    dsk = {}
+    for iy, iy_src, y_roi in _yy:
+        for ix, ix_src, x_roi in _xx:
+            crop_yx = (y_roi, x_roi)
+            _blocks = blocks[:, :, iy_src, ix_src].tolist()
+            dsk[(name, iy, ix, 0, 0)] = (functools.partial(_reshape_yxbt_impl, crop_yx=crop_yx), _blocks)
+
+    dsk = HighLevelGraph.from_collections(name, dsk,
+                                          dependencies=deps)
+    data = da.Array(dsk,
+                    name,
+                    chunks=chunks,
+                    dtype=dtype,
+                    shape=shape)
+
+    coords: Dict[Hashable, Any] = {k: c for k, c in xx.coords.items()}
+    coords['band'] = list(xx.data_vars)
+
+    return xr.DataArray(data=data,
+                        dims=dims,
+                        coords=coords,
+                        name=name0,
+                        attrs=xx.attrs)
