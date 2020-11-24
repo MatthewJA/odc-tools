@@ -20,9 +20,6 @@ ADD ./ /code
 WORKDIR /code
 # TODO: work out why this needs `--editable`
 RUN /env/bin/pip install --extra-index-url https://packages.dea.ga.gov.au/ \
-    --editable apps/dc_tools[tests] \
-    --editable apps/cloud \
-    --editable apps/dnsup \
     --editable libs/algo \
     --editable libs/aio \
     --editable libs/aws \
@@ -34,7 +31,10 @@ RUN /env/bin/pip install --extra-index-url https://packages.dea.ga.gov.au/ \
     --editable libs/ppt \
     --editable libs/stats \
     --editable libs/thredds \
-    --editable libs/ui
+    --editable libs/ui \
+    --editable apps/cloud \
+    --editable apps/dnsup \
+    --editable apps/dc_tools[tests]
 
 # Copy in the test runner script
 COPY ./tests/run_tests.sh /usr/local/bin/run_tests.sh
