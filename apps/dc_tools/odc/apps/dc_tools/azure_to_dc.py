@@ -16,7 +16,7 @@ from typing import List, Tuple
 def dump_list_to_odc(
         account_url,
         container_name,
-        yaml_content_list: List[Tuple[bytes, str, str]],
+        yaml_content_list: List[Tuple[bytes, str]],
         dc: Datacube,
         products: List[str],
         **kwargs,
@@ -76,7 +76,7 @@ def dump_list_to_odc(
                     'you can supply several by repeating this option with a new product name'),
               multiple=True)
 @click.argument("account_url", type=str, nargs=1)
-@click.argument("containter_name", type=str, nargs=1)
+@click.argument("container_name", type=str, nargs=1)
 @click.argument("credential", type=str, nargs=1)
 @click.argument("prefix", type=str, nargs=1)
 @click.argument("suffix", type=str, nargs=1)
@@ -93,10 +93,10 @@ def cli(
 ):
     print(f"Opening AZ Container {container_name} on {account_url}")
     print(f"Searching on prefix '{prefix}' for files matching suffix '{suffix}'")
-    yaml_urls = find_blobs(account_url, container_name, credential, prefix, suffix)
+    yaml_urls = list(find_blobs(account_url, container_name, credential, prefix, suffix))
 
     print(f"Found {len(yaml_urls)} datasets")
-    yaml_contents = download_yamls(yaml_urls)
+    yaml_contents = download_yamls(account_url, container_name, credential, yaml_urls)
 
     print(f"Matching to {product_names} products")
     # Consume generator and fetch YAML's

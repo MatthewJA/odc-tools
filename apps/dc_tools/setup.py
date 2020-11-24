@@ -31,7 +31,8 @@ setup(
     ],
 
     extras_require={
-        'tests': TEST_REQUIREMENTS
+        'tests': TEST_REQUIREMENTS,
+        'AZURE': ['azure-storage-blob'],
     },
 
     entry_points={
@@ -42,7 +43,7 @@ setup(
             'thredds-to-dc = odc.apps.dc_tools.thredds_to_dc:cli',
             'sqs-to-dc = odc.apps.dc_tools.sqs_to_dc:cli',
             'stac-to-dc = odc.apps.dc_tools.stac_api_to_dc:cli',
-            'azure-to-dc = odc.apps.dc_tools.azure_to_dc:cli'
+            'azure-to-dc = odc.apps.dc_tools.azure_to_dc:cli [AZURE]',
         ]
     },
 
