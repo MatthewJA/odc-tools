@@ -27,12 +27,11 @@ setup(
         'odc_io',
         'odc_aws',
         'odc_aio',
-        'odc_azure'
     ],
 
     extras_require={
         'tests': TEST_REQUIREMENTS,
-        'AZURE': ['azure-storage-blob'],
+        'AZURE': ['odc_azure','azure-storage-blob'],
     },
 
     entry_points={

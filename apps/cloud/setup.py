@@ -22,14 +22,13 @@ setup(
         'odc_aio',
         'odc_ppt',
         'odc_thredds',
-        'odc_azure',
         "click",
     ],
 
     extras_require={
         'GCP': ['google-cloud-storage'],
         'THREDDS': ['thredds_crawler', 'requests'],
-        'AZURE': ['azure-storage-blob'],
+        'AZURE': ['odc_azure','azure-storage-blob'],
     },
 
     entry_points={
