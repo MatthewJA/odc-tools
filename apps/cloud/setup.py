@@ -29,7 +29,7 @@ setup(
     extras_require={
         'GCP': ['google-cloud-storage'],
         'THREDDS': ['thredds_crawler', 'requests'],
-        'AZURE': ['azure-storage-blob']
+        'AZURE': ['azure-storage-blob'],
     },
 
     entry_points={

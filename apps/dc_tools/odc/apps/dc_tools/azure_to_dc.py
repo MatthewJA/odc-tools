@@ -1,4 +1,4 @@
-"""Crawl Thredds for prefixes and fetch YAML's for indexing
+"""Crawl Azure prefixes and fetch files matching suffix for indexing
 and dump them into a Datacube instance
 """
 import sys
